@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hospital Price Explorer v3 — Team 224 (CSE6242)</title>
+<!--
+  Hospital Price Explorer — Team 224, CSE 6242 Spring 2026
+  Built on D3.js v7 following the choropleth pattern from CSE6242 HW Solution Q5.html
+  (wildlife trafficking map): dropdown selector -> data map -> color scale -> tooltip.
+  Adapted for hospital price transparency with a diverging HMI color scale.
+
+  v3 changes vs v2:
+  - Ownership dropdown now filters hospital cards in the sidebar (was cosmetic)
+  - Tooltips now surface hospital names clearly on state hover and on hospital cards
+  - HMI legend explains negative values = below-average pricing (fair), not an error
+-->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/topojson/3.0.2/topojson.min.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+body{font-family:Arial,sans-serif;background:#0a0e17;color:#e0e6ed;overflow-x:hidden;}
+
+.header{background:linear-gradient(135deg,#0d1117 0%,#161b28 100%);border-bottom:1px solid #f46d4333;padding:14px 24px;display:flex;align-items:center;justify-content:space-between;box-shadow:0 2px 20px rgba(30,144,255,0.08);}
+.header h1{font-size:22px;font-weight:900;color:#f46d43;letter-spacing:2px;text-transform:uppercase;text-shadow:0 0 10px rgba(244,109,67,0.3);}
+.header .sub{font-size:11px;color:#fee08b;letter-spacing:1px;}
+.header .team{font-size:12px;color:#fee08b;font-weight:bold;}
+
+.stats{display:flex;gap:28px;padding:8px 24px;background:#0d1117;border-bottom:1px solid #ffffff0a;font-size:13px;}
+.stats .s{display:flex;gap:5px;color:#5a7a9a;font-weight:600;}
+.stats .v{color:#a6d96a;font-weight:900;text-shadow:0 0 6px rgba(166,217,106,0.3);}
+
+.controls{padding:10px 24px;background:#0d1117;border-bottom:1px solid #ffffff0a;display:flex;gap:16px;align-items:center;flex-wrap:wrap;}
+.controls label{font-size:13px;font-weight:700;color:#5a7a9a;text-transform:uppercase;letter-spacing:1px;}
+.controls select{padding:6px 12px;border:1px solid #fdae6144;border-radius:4px;font-size:13px;background:#131a2a;color:#fee08b;font-family:Arial,sans-serif;outline:none;cursor:pointer;}
+.controls select:hover{border-color:#fdae61;box-shadow:0 0 8px rgba(253,174,97,0.2);}
+
+.main{display:flex;padding:16px 24px;gap:16px;height:calc(100vh - 180px);min-height:500px;}
+.map-box{flex:1;background:#0d1117;border-radius:8px;border:1px solid #fdae6122;padding:12px;position:relative;box-shadow:inset 0 0 40px rgba(0,0,0,0.4);overflow:hidden;}
+
+.sidebar{width:340px;background:linear-gradient(180deg,#0d1117,#111827);border-radius:8px;border:1px solid #fdae6122;padding:14px;overflow-y:auto;}
+.sidebar::-webkit-scrollbar{width:4px;}
+.sidebar::-webkit-scrollbar-track{background:#0a0e17;}
+.sidebar::-webkit-scrollbar-thumb{background:#fdae6144;border-radius:4px;}
+.sidebar h3{font-size:14px;font-weight:900;color:#fdae61;margin-bottom:10px;letter-spacing:1px;text-shadow:0 0 8px rgba(253,174,97,0.2);}
+
+.state{cursor:pointer;transition:all 0.2s;}
+.state:hover{filter:brightness(1.2) drop-shadow(0 0 6px rgba(253,174,97,0.5));stroke:#fdae61 !important;stroke-width:1.2px !important;}
+
+.tip{position:absolute;padding:10px 14px;background:rgba(13,17,23,0.95);color:#e0e6ed;border-radius:6px;font-size:12px;pointer-events:none;z-index:100;max-width:300px;line-height:1.7;border:1px solid #fdae6144;box-shadow:0 4px 20px rgba(0,0,0,0.6),0 0 15px rgba(253,174,97,0.1);}
+
+.hosp-card{padding:8px 10px;margin:4px 0;border-radius:4px;border-left:3px solid #333;font-size:11px;cursor:pointer;transition:all 0.15s;background:#ffffff05;}
+.hosp-card:hover{background:#fdae6115;border-left-color:#fdae61;transform:translateX(3px);}
+.hosp-card .nm{font-weight:700;color:#e0e6ed;font-size:12px;}
+.hosp-card .dt{color:#5a7a9a;margin-top:2px;font-size:10px;}
+
+.drill{display:none;background:linear-gradient(180deg,#0d1117,#111827);border-radius:8px;border:1px solid #fdae6122;padding:15px;margin:0 24px 16px;}
+.drill.active{display:block;}
+.drill h3{color:#f46d43;margin-bottom:10px;font-size:14px;font-weight:900;letter-spacing:1px;}
+.drill .close{float:right;cursor:pointer;color:#5a7a9a;font-size:18px;}
+.drill .close:hover{color:#ff4444;}
+.drill table{width:100%;border-collapse:collapse;font-size:12px;}
+.drill th{background:#f46d4322;color:#fdae61;padding:6px 8px;text-align:left;border-bottom:1px solid #f46d4333;border-right:1px solid #ffffff15;}
+.drill th:last-child{border-right:none;}
+.drill td{padding:5px 8px;border-bottom:1px solid #ffffff25;border-right:1px solid #ffffff10;color:#b0bec5;}
+.drill td:last-child{border-right:none;}
+
+.high{color:#d73027;font-weight:700;}
+.fair{color:#1a9850;font-weight:700;}
+.mid{color:#fee08b;font-weight:700;}
+
+.help-bar{padding:6px 24px;background:#0a1020;border-bottom:1px solid #ffffff0a;font-size:11px;color:#7a8aa0;line-height:1.5;}
+.help-bar b{color:#a6d96a;}
+.help-bar .warn{color:#fdae61;}
+.controls > div:nth-child(n+2){display:none !important;}
+
+
+.controls select optgroup{font-weight:900;font-size:12px;letter-spacing:1.2px;color:#fdae61;background:#0a1428;padding:6px 4px;font-style:normal;text-transform:uppercase;}.controls select optgroup:nth-of-type(2){color:#fdae61;background:#1a1020;}.controls select optgroup:nth-of-type(3){color:#7fb3d5;background:#0d1730;}.controls select option{font-weight:400;font-size:13px;color:#fee08b;background:#131a2a;padding:4px 16px;letter-spacing:0.3px;text-transform:none;}
+</style>
+</head>
+<body>
+<div class="header"><div><h1>Hospital Price Explorer</h1><div class="sub">Hospital Markup Index (HMI) — Wage-Adjusted Pricing Fairness Across U.S. Hospitals · Team 224</div></div></div>
+<div class="stats"><div class="s">HOSPITALS <span class="v">934</span></div><div class="s">STATES <span class="v">49</span></div><div class="s">PROCEDURES <span class="v">23</span></div><div class="s">RECORDS <span class="v">333,203</span></div><div class="s">SAVINGS <span class="v">$3.28B</span></div></div>
+<div class="controls"><div><label>Procedure </label><select id="procDrop"><option value="all">ALL PROCEDURES</option></select></div><div><label>Confidence </label><select id="ownDrop"><option value="all">ALL HOSPITALS</option><option value="high">HIGH CONFIDENCE ONLY (≥10 records)</option><option value="low">LOW CONFIDENCE ONLY (&lt;10 records)</option></select></div><div><label>Min records </label><select id="minObsDrop"><option value="0">ANY</option><option value="20">20+</option><option value="50">50+</option><option value="100">100+</option></select></div></div>
+<div class="help-bar"><b>HMI (Hospital Markup Index):</b> Positive values = above-average pricing for that procedure. Negative values = below-average (fairer) pricing. Hover a state for a summary; click a state to see its hospitals ranked by markup.</div>
+<div class="main"><div class="map-box"><svg id="choropleth" width="100%" height="100%"></svg></div><div class="sidebar"><h3 id="sideTitle">SELECT A STATE</h3><div id="hospList" style="color:#5a7a9a;font-size:12px;">Click any state on the map to view hospitals ranked by Markup Index</div></div></div>
+<div class="drill" id="drillDown"><span class="close" id="drillClose">&times;</span><h3 id="drillTitle"></h3><div id="drillContent"></div></div>
+
+
+<script>
+var DATA={states:{},hospitals:[],procedures:[],proc_groups:{outpatient:[],inpatient_cpt:[],drg:[]},proc_state:{},__byState:{}};function _initViewer(){
+
+var tip=d3.select("body").append("div").attr("class","tip").style("display","none");
+var _drop=d3.select("#procDrop");var _groups=DATA.proc_groups||{};function _addGroup(label,items){if(!items||!items.length)return;var g=_drop.append("optgroup").attr("label",label);items.forEach(function(p){g.append("option").attr("value",p).text(p.toUpperCase());});}_addGroup("OUTPATIENT - CPT LINE PRICES",_groups.outpatient);_addGroup("INPATIENT - CPT LINE PRICES",_groups.inpatient_cpt);_addGroup("INPATIENT - DRG BUNDLED PRICES",_groups.drg);
+
+// Track current sidebar state so filter dropdowns can re-render it
+var currentStateName=null;
+
+// Helper: apply the confidence + min-observations filter
+function _getStateHospitals(abbr,cb){if(DATA.__byState[abbr]){cb(DATA.__byState[abbr]);return;}fetch('data/hospitals/'+abbr+'.json').then(function(r){return r.json();}).then(function(hs){DATA.__byState[abbr]=hs;cb(hs);});}
+function filterHospitals(hosps){
+    var conf=d3.select("#ownDrop").property("value");
+    var minObs=+d3.select("#minObsDrop").property("value");
+    return hosps.filter(function(h){
+        if(conf==="high"&&h.low_conf)return false;
+        if(conf==="low"&&!h.low_conf)return false;
+        if(h.n_obs<minObs)return false;
+        return true;
+    });
+}
+
+d3.json("https://cdn.jsdelivr.net/npm/us-atlas@3/states-10m.json").then(function(us){
+    var states=topojson.feature(us,us.objects.states);
+    var container=document.querySelector(".map-box");
+    var w=container.clientWidth-24,h=container.clientHeight-24;
+    var svg=d3.select("#choropleth").attr("viewBox","0 0 "+w+" "+h);
+    var projection=d3.geoAlbersUsa().fitSize([w-100,h-30],states);
+    var path=d3.geoPath().projection(projection);
+    
+    // Team's color scale: green -> yellow -> red (same as map_skeleton.html)
+    var colorScale=d3.scaleSequential().domain([-1.5,1.5]).interpolator(function(t){
+        return d3.scaleLinear().domain([0,0.15,0.3,0.45,0.55,0.7,0.85,1]).range(["#006837","#1a9850","#66bd63","#a6d96a","#fee08b","#fdae61","#f46d43","#a50026"])(t);
+    }).clamp(true);
+    
+    // No-data color for dark theme
+    var noDataColor="#3a3f4a";
+
+    function createMap(proc){
+        svg.selectAll("g.map-group,text.map-text").remove();
+        var dataMap={};
+        if(proc==="all"){Object.keys(DATA.states).forEach(function(n){dataMap[n]=DATA.states[n];});}
+        else{var ps=DATA.proc_state[proc];if(ps)Object.keys(ps).forEach(function(n){dataMap[n]={avg_markup:ps[n].avg_markup,num_hospitals:ps[n].count};});}
+        
+        // 3D Layer 1: Deep shadow
+        var shadowG=svg.append("g").attr("class","map-group").attr("transform","translate(5,7)");
+        shadowG.selectAll("path").data(states.features).join("path")
+            .attr("d",path).attr("fill","#030508").attr("stroke","none");
+        
+        // 3D Layer 2: Dark edge (extrusion side)
+        var edgeG=svg.append("g").attr("class","map-group").attr("transform","translate(2.5,3.5)");
+        edgeG.selectAll("path").data(states.features).join("path")
+            .attr("d",path)
+            .attr("fill",function(d){
+                var e=dataMap[d.properties.name];
+                if(e&&e.avg_markup!==undefined){
+                    var c=d3.color(colorScale(-e.avg_markup));
+                    return c?c.darker(2):"#252830";
+                }
+                return "#252830";
+            })
+            .attr("stroke","#0a0f18").attr("stroke-width","0.3");
+        
+        // 3D Layer 3: Main map (full opacity, team colors)
+        var g=svg.append("g").attr("class","map-group");
+        g.selectAll("path").data(states.features).join("path")
+            .attr("class","state")
+            .attr("d",path)
+            .attr("fill",function(d){
+                var e=dataMap[d.properties.name];
+                return e&&e.avg_markup!==undefined?colorScale(-e.avg_markup):noDataColor;
+            })
+            .attr("stroke","#1e3048")
+            .attr("stroke-width","0.5")
+            .on("mouseover",function(ev,d){
+                d3.select(this).attr("stroke","#fdae61").attr("stroke-width","1.2");
+                var e=dataMap[d.properties.name];
+                var html="<b style='color:#f46d43;font-size:14px;font-weight:900'>"+d.properties.name+"</b><br>";
+                if(e&&e.avg_markup!==undefined){
+                    var mc=e.avg_markup>0.3?"high":e.avg_markup<-0.3?"fair":"mid";
+                    var label=e.avg_markup>0.3?"above avg":e.avg_markup<-0.3?"below avg (fair)":"near avg";
+                    html+="Markup Index: <span class='"+mc+"'>"+e.avg_markup.toFixed(3)+"</span> <span style='color:#7a8aa0;font-size:10px'>("+label+")</span><br>";
+                    html+="Hospitals in data: <span style='color:#fee08b'>"+e.num_hospitals+"</span>";
+                    // Look up hospitals for this state by full name (not abbr, since per-proc aggregates lack abbr)
+                    var stateMeta=DATA.states[d.properties.name];
+                    if(stateMeta&&stateMeta.abbr){
+                        var sh=DATA.hospitals.filter(function(h){return h.state===stateMeta.abbr;}).sort(function(a,b){return b.markup-a.markup;});
+                        if(sh.length>0){
+                            html+="<br><br><span style='color:#5a7a9a;font-size:10px'>TOP MARKUP HOSPITALS:</span>";
+                            sh.slice(0,3).forEach(function(h){
+                                var hc=h.markup>0.3?"high":h.markup<-0.3?"fair":"mid";
+                                html+="<br><span style='font-size:11px;color:#e0e6ed;font-weight:600'>"+h.name.substring(0,36)+(h.name.length>36?"…":"")+"</span>";
+                                html+="<br><span style='font-size:10px;color:#7a8aa0'>&nbsp;&nbsp;HMI: <span class='"+hc+"'>"+h.markup.toFixed(2)+"</span> · P"+h.pctile.toFixed(0)+"% · n="+h.n_obs+(h.low_conf?" (low conf)":"")+"</span>";
+                            });
+                            html+="<br><br><span style='color:#5a7a9a;font-size:10px;font-style:italic'>Click state to see all "+sh.length+" hospitals</span>";
+                        }
+                    }
+                } else {
+                    html+="<span style='color:#5a7a9a'>No data available</span>";
+                }
+                tip.html(html).style("display","block").style("left",(ev.pageX+14)+"px").style("top",(ev.pageY-20)+"px");
+            })
+            .on("mousemove",function(ev){tip.style("left",(ev.pageX+14)+"px").style("top",(ev.pageY-20)+"px");})
+            .on("mouseout",function(){tip.style("display","none");d3.select(this).attr("stroke","#1e3048").attr("stroke-width","0.5");})
+            .on("click",function(ev,d){showHospitals(d.properties.name);});
+        
+        // Legend
+        var lg=svg.append("g").attr("class","map-group").attr("transform","translate("+(w-95)+",60)");
+        lg.append("text").attr("x",0).attr("y",-14).attr("font-size","11px").attr("fill","#5a7a9a").attr("font-weight","bold").attr("font-family","Arial").text("MARKUP INDEX");
+        [{l:"HIGH MARKUP",c:"#a50026"},{l:"ABOVE AVG",c:"#f46d43"},{l:"FAIR",c:"#fee08b"},{l:"BELOW AVG",c:"#66bd63"},{l:"LOW MARKUP",c:"#006837"}]
+        .forEach(function(d,i){
+            lg.append("rect").attr("x",0).attr("y",i*22).attr("width",15).attr("height",15).attr("fill",d.c).attr("rx",2);
+            lg.append("text").attr("x",22).attr("y",i*22+12).attr("font-size","10px").attr("fill","#5a7a9a").attr("font-family","Arial").text(d.l);
+        });
+        
+        
+        
+    }
+    createMap("all");
+    d3.select("#procDrop").on("change",function(){createMap(this.value);});d3.select("#procDrop").on("change.side",function(){if(currentStateName)showHospitals(currentStateName);});
+
+    function showHospitals(name){
+        currentStateName=name;
+        var sd=DATA.states[name];
+        if(!sd){d3.select("#sideTitle").text(name+" — NO DATA");d3.select("#hospList").html("");return;}
+        var curProc=d3.select("#procDrop").property("value");_getStateHospitals(sd.abbr,function(stateHosps){var allHosps=stateHosps.filter(function(h){if(curProc&&curProc!=="all"&&!(h.procs&&h.procs[curProc]))return false;return true;});var hosps=filterHospitals(allHosps).sort(function(a,b){return b.markup-a.markup;});
+        d3.select("#sideTitle").text(name+" — "+hosps.length+" of "+allHosps.length+" HOSPITALS");
+        var list=d3.select("#hospList").html("");
+        if(hosps.length===0){
+            list.append("div").style("color","#7a8aa0").style("font-size","12px").style("padding","8px").text("No hospitals match the current filters. Try loosening the Confidence or Min records selectors.");
+            return;
+        }
+        hosps.forEach(function(h){
+            var mc=h.markup>0.3?"#d73027":h.markup<-0.3?"#1a9850":"#fee08b";
+            var card=list.append("div").attr("class","hosp-card").style("border-left-color",mc);
+            card.append("div").attr("class","nm").text(h.name);
+            card.append("div").attr("class","dt").html("HMI: <span style='color:"+mc+";font-weight:bold'>"+h.markup.toFixed(2)+"</span> · P"+h.pctile.toFixed(0)+"% · "+h.n_obs+" rec"+(h.low_conf?" (low conf)":""));
+            // Hover tooltip on the card itself (helps confirm hospital names)
+            card.on("mouseover",function(ev){
+                tip.html("<b style='color:#fdae61;font-size:13px'>"+h.name+"</b><br><span style='color:#7a8aa0;font-size:10px'>"+h.state_full+" · NPI "+h.npi+"</span><br>HMI: <span style='color:"+mc+";font-weight:700'>"+h.markup.toFixed(3)+"</span> (z="+h.zscore.toFixed(2)+", p="+h.pctile.toFixed(1)+"%)<br>Records: "+h.n_obs+(h.low_conf?" <span style='color:#fdae61'>low confidence</span>":"")+"<br><span style='font-size:10px;color:#7a8aa0;font-style:italic'>Click for price breakdown</span>")
+                    .style("display","block").style("left",(ev.pageX+14)+"px").style("top",(ev.pageY-20)+"px");
+            });
+            card.on("mousemove",function(ev){tip.style("left",(ev.pageX+14)+"px").style("top",(ev.pageY-20)+"px");});
+            card.on("mouseout",function(){tip.style("display","none");});
+            card.on("click",function(){tip.style("display","none");showDrill(h);});
+        });
+});
+    }
+
+    // Wire up the filter dropdowns to re-render the sidebar when they change
+    d3.select("#ownDrop").on("change",function(){if(currentStateName)showHospitals(currentStateName);});
+    d3.select("#minObsDrop").on("change",function(){if(currentStateName)showHospitals(currentStateName);});
+    function showDrill(h){
+        d3.select("#drillDown").classed("active",true);
+        d3.select("#drillTitle").text(h.name+" — "+h.state_full);
+        var mc=h.markup>0.3?"high":h.markup<-0.3?"fair":"mid";
+        var html="<p style='margin-bottom:10px;font-size:12px;color:#b0bec5'>HMI: <span class='"+mc+"'>"+h.markup.toFixed(3)+"</span> | Z-Score: "+h.zscore.toFixed(2)+" | Percentile: "+h.pctile.toFixed(1)+"% | "+h.n_obs+" records"+(h.low_conf?" | <span style='color:#facc15'>LOW CONFIDENCE (&lt;10 obs)</span>":"")+"</p>";
+        var procs=h.procs;var allKeys=Object.keys(procs);var _INP_CPT={"Hip Replacement":1,"Knee Replacement":1,"Gallbladder Removal":1};var cptKeys=allKeys.filter(function(k){return k.indexOf("DRG")<0&&_INP_CPT[k]!==1;}).sort(function(a,b){return procs[a].avg_price-procs[b].avg_price;});var cptInpKeys=allKeys.filter(function(k){return _INP_CPT[k]===1;}).sort(function(a,b){return procs[a].avg_price-procs[b].avg_price;});var drgKeys=allKeys.filter(function(k){return k.indexOf("DRG")>=0;}).sort(function(a,b){return procs[a].avg_price-procs[b].avg_price;});var pn=cptKeys.concat(cptInpKeys).concat(drgKeys);
+        if(pn.length>0){html+="<table><tr><th>PROCEDURE</th><th>BLENDED</th><th>CASH</th><th>INS</th><th>MEDICARE</th><th>vs MDCR</th><th>REC</th></tr>";
+        function renderProcRow(p){var mref=procs[p].mdcr_ref,mk=procs[p].markup;var cash=procs[p].cash,ins=procs[p].ins;var INPATIENT_CPT={"Hip Replacement":1,"Knee Replacement":1,"Gallbladder Removal":1};var isInpatCpt=INPATIENT_CPT[p]===1;var hasDrg=(typeof drgKeys!=="undefined"&&drgKeys.length>0);var bundleCellHTML=hasDrg?"<td style='color:#7fb3d5;font-size:11px;font-style:italic'>see DRG</td>":"<td style='color:#7a6040;font-size:11px;font-style:italic' title='This hospital did not publish DRG bundle prices'>no DRG data</td>";var procLabel=isInpatCpt?"<span style='font-style:italic'>"+p+"</span> <span style='color:#7fb3d5;font-size:10px;font-style:italic' title='Bills as DRG bundle — see Inpatient Bundled section below for full-stay price'>(bundled)</span>":p;var mrefCell=(mref==null)?(isInpatCpt?bundleCellHTML:"<td style='color:#555'>—</td>"):"<td style='color:#7a8aa0'>$"+Math.round(mref).toLocaleString()+"</td>";var mkColor=(mk==null)?"#555":(mk>=10?"#d73027":mk>=5?"#fdae61":"#a6d96a");var mkCell=(mk==null)?(isInpatCpt?bundleCellHTML:"<td style='color:#555'>—</td>"):"<td style='color:"+mkColor+";font-weight:700'>"+mk.toFixed(1)+"x</td>";var cashCell=(cash==null)?"<td style='color:#555'>—</td>":"<td style='color:#fdae61'>$"+Math.round(cash).toLocaleString()+"</td>";var insCell=(ins==null)?"<td style='color:#555'>—</td>":"<td style='color:#66bd63'>$"+Math.round(ins).toLocaleString()+"</td>";html+="<tr><td style='color:#e0e6ed'>"+procLabel+"</td><td style='color:#a6d96a'>$"+Math.round(procs[p].avg_price).toLocaleString()+"</td>"+cashCell+insCell+mrefCell+mkCell+"<td>"+procs[p].count+"</td></tr>";}var cptHdr="<tr><td colspan=7 style='padding:10px 8px;background:#0a1428;color:#a6d96a;font-size:11px;letter-spacing:1.8px;font-weight:900;border-top:2px solid #1e3048;border-bottom:2px solid #1e3048'>OUTPATIENT - CPT LINE PRICES</td></tr>";var inpCptHdrSuffix=(drgKeys.length>0)?"see bundled prices below":"this hospital did not publish DRG bundle prices";var inpCptHdr="<tr><td colspan=7 style='padding:10px 8px;background:#2a1f0a;color:#fdae61;font-size:11px;letter-spacing:1.8px;font-weight:900;border-top:2px solid #5c3d0a;border-bottom:2px solid #5c3d0a'>INPATIENT - CPT LINE PRICES (these bill as DRG bundles; line price shown only for reference; "+inpCptHdrSuffix+")</td></tr>";var drgHdr="<tr><td colspan=7 style='padding:10px 8px;background:#0d1730;color:#7fb3d5;font-size:11px;letter-spacing:1.8px;font-weight:900;border-top:2px solid #1e4668;border-bottom:2px solid #1e4668'>INPATIENT - DRG BUNDLED PRICES (full-stay bundle, apples-to-apples with Medicare)</td></tr>";function _renderTinted(p,bg){var saved=html;renderProcRow(p);if(bg){var last=html.lastIndexOf("<tr>");html=html.substring(0,last)+"<tr style='background:"+bg+"'>"+html.substring(last+4);}}if(cptKeys.length>0){html+=cptHdr;cptKeys.forEach(function(p){_renderTinted(p,null);});}if(cptInpKeys.length>0){html+=inpCptHdr;cptInpKeys.forEach(function(p){_renderTinted(p,"#1a1305");});}if(drgKeys.length>0){html+=drgHdr;drgKeys.forEach(function(p){_renderTinted(p,"#0a1520");});}
+        html+="</table>";
+        var bW=500,bH=cptKeys.length*26+10,mx=d3.max(cptKeys,function(p){return procs[p].avg_price;})||1,xs=d3.scaleLinear().domain([0,mx]).range([0,bW-250]);
+        html+="<svg width='"+bW+"' height='"+bH+"' style='margin-top:12px;overflow:visible'>";
+        cptKeys.forEach(function(p,i){var bl=xs(procs[p].avg_price),pc=procs[p].avg_price/mx,bc=pc>0.7?"#ef4444":pc>0.4?"#facc15":"#22c55e";
+        html+="<text x='0' y='"+(i*26+16)+"' font-size='10px' fill='#5a7a9a' font-family='Arial'>"+p.substring(0,22)+"</text>";
+        html+="<rect x='160' y='"+(i*26+4)+"' width='"+Math.max(2,bl)+"' height='18' fill='"+bc+"' rx='2'/>";
+        html+="<text x='"+(165+bl)+"' y='"+(i*26+16)+"' font-size='10px' fill='#b0bec5' font-family='Arial'>$"+Math.round(procs[p].avg_price).toLocaleString()+"</text>";});
+        html+="</svg>";}
+        d3.select("#drillContent").html(html);
+    }
+    d3.select("#drillClose").on("click",function(){d3.select("#drillDown").classed("active",false);});
+});
+}fetch('data/overview.json').then(function(r){return r.json();}).then(function(o){DATA.states=o.states;DATA.procedures=o.procedures;DATA.proc_groups=o.proc_groups;DATA.proc_state=o.proc_state;_initViewer();}).catch(function(e){document.querySelector('.map-box').innerHTML='<div style="color:#f46d43;padding:20px;font-family:Arial"><b>Could not load data.</b><br><br>This viewer requires a local web server.<br>Run <code style="background:#222;padding:2px 6px">python3 -m http.server 8000</code> in this folder, then open <a href="http://localhost:8000" style="color:#fdae61">http://localhost:8000</a>.<br><br>Error: '+e.message+'</div>';});</script>
+</body>
+</html>
