@@ -1,0 +1,31 @@
+RECONCILED SAVINGS SIMULATION — RESULTS
+============================================================
+
+PER-PROCEDURE TABLE (within-sample, 1106 hospitals):
+------------------------------------------------------------
+Procedure                  Hosp States     $/pt      Cons. $       Asp. $
+Hip replacement             327     40 $  3,261 $188,636,000 $1,179,953,163
+Knee replacement            391     41 $  3,585 $202,187,604 $1,096,665,403
+Shoulder arthroscopy        417     42 $  2,524 $104,515,149 $747,534,059
+Upper GI endoscopy          652     45 $    848 $602,748,392 $3,366,606,077
+Colonoscopy, diagnostic     655     45 $    673 $ 96,601,191 $381,966,682
+Lap. cholecystectomy        569     44 $  2,473 $ 14,230,565 $111,413,560
+Brain MRI w/ contrast       745     47 $    698 $409,575,127 $2,199,910,106
+CT scan abdomen             782     47 $    724 $1,657,439,772 $8,179,649,491
+------------------------------------------------------------
+TOTAL (8 procedures)                            $3,275,933,800 $17,263,698,541
+
+WITHIN-SAMPLE RANGE:    $3276M – $17.26B
+SCALED NATIONAL RANGE:  $17.77B – $93.65B
+  (scaled by 1/0.184 = 5.4x; cite as projection)
+
+RECOMMENDED REPORT LANGUAGE:
+------------------------------------------------------------
+"Across 8 shoppable procedures (Hip replacement, Knee replacement, Shoulder arthroscopy, Upper GI endoscopy, Colonoscopy, diagnostic, Lap. cholecystectomy, Brain MRI w/ contrast, and CT scan abdomen),
+ our reconciled simulation estimates $3.28B–$17.26B in potential
+ annual savings within our 1106-hospital sample. The conservative
+ bound assumes shoppable patients switch from a median-priced to
+ lowest-markup hospital; the aspirational bound captures total
+ observed price dispersion. If pricing patterns generalize to the
+ ~4894 hospitals not in our sample, projected national savings
+ are $17.77B–$93.65B."
